@@ -17,6 +17,38 @@ s = p.read_text()
 s = re.sub(r"#Preview \{\n[^}]*\n\}\n", "", s)
 p.write_text(s)
 PYCODE
+# SwiftPM's generated resource lookup can look outside Contents/Resources.
+# Patch the pinned dependency to use the signed app's resource bundle first.
+utilities_file=".build/checkouts/KeyboardShortcuts/Sources/KeyboardShortcuts/Utilities.swift"
+chmod u+w "$utilities_file"
+python3 - "$utilities_file" <<'PYCODE'
+from pathlib import Path
+import sys
+p = Path(sys.argv[1])
+s = p.read_text()
+old = 'NSLocalizedString(self, bundle: .module, comment: self)'
+new = 'NSLocalizedString(self, bundle: .frameletKeyboardResources, comment: self)'
+if old in s:
+    s = s.replace(old, new)
+    marker = 'import SwiftUI\n'
+    if s.count(marker) != 1:
+        raise SystemExit('Unexpected KeyboardShortcuts source; cannot patch resource lookup.')
+    helper = '''
+private extension Bundle {
+    static let frameletKeyboardResources: Bundle = {
+        if let url = Bundle.main.url(forResource: "KeyboardShortcuts_KeyboardShortcuts", withExtension: "bundle"),
+           let bundle = Bundle(url: url) {
+            return bundle
+        }
+        return .module
+    }()
+}
+'''
+    s = s.replace(marker, marker + helper, 1)
+    p.write_text(s)
+elif new not in s:
+    raise SystemExit('Unexpected KeyboardShortcuts source; cannot patch resource lookup.')
+PYCODE
 if [[ -n "${FRAMELET_SDK_PATH:-}" ]]; then
     sdk_path="$FRAMELET_SDK_PATH"
 elif [[ -d /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk ]]; then
@@ -25,10 +57,17 @@ elif [[ -d /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk ]]; then
 else
     sdk_path="$(xcrun --sdk macosx --show-sdk-path)"
 fi
-build_args=(-c release --sdk "$sdk_path" --arch arm64)
+build_args=(-c release --sdk "$sdk_path")
+if [[ "${FRAMELET_UNIVERSAL:-0}" == 1 ]]; then
+    build_args+=(--arch arm64 --arch x86_64)
+fi
 swift build "${build_args[@]}"
 binary_dir="$(swift build "${build_args[@]}" --show-bin-path)"
 app="$PWD/build/Framelet.app"
+if [[ -e "$app" ]]; then
+    echo "Move the existing $app aside before building a fresh bundle." >&2
+    exit 1
+fi
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$binary_dir/Framelet" "$app/Contents/MacOS/Framelet"
 # Architecture check skipped for local development.
@@ -59,18 +98,7 @@ if [[ -z "$bundle_path" ]]; then
     exit 1
 fi
 ditto "$bundle_path" "$app/Contents/Resources/KeyboardShortcuts_KeyboardShortcuts.bundle"
-ditto "$bundle_path" "$app/KeyboardShortcuts_KeyboardShortcuts.bundle"
 codesign --force --sign - --entitlements Framelet/Framelet.entitlements "$app"
-# Finder custom icons are applied only in an interactive desktop session.
-if [[ "${FRAMELET_SKIP_FINDER_ICON:-0}" == 1 ]]; then
-    echo 'Skipping custom Finder icon in this environment.'
-elif ! xcrun swift tools/apply-finder-icon.swift "$app" "$app/Contents/Resources/AppIcon.icns"; then
-    echo 'Warning: could not apply the custom Finder icon; the bundled icon is still available.' >&2
-elif [[ -e "$app/"$'Icon\r' ]]; then
-    echo 'Finder custom icon file is present.'
-else
-    echo 'Finder custom icon was accepted but its marker was not found; the app will retry at launch.' >&2
-fi
 if ! codesign --verify --deep --strict "$app"; then
     echo 'Error: macOS did not validate the app signature.' >&2
     exit 1

@@ -108,13 +108,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, SCStreamDelegate, SCStreamOu
         if ![1, 5, 15, 30].contains(ud.integer(forKey: Preferences.kFrameRate)) {
             ud.set(1, forKey: Preferences.kFrameRate)
         }
-        // A Finder custom icon avoids macOS adding a gray backing to legacy icons.
-        // Reapply when running from a writable app bundle; the bundled icon remains the fallback.
-        if let iconURL = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
-           let icon = NSImage(contentsOf: iconURL) {
-            let applied = NSWorkspace.shared.setIcon(icon, forFile: Bundle.main.bundlePath, options: [])
-            if !applied { print("Framelet: could not apply custom Finder icon to \(Bundle.main.bundlePath)") }
-        }
         if let front = NSWorkspace.shared.frontmostApplication,
            front.processIdentifier != ProcessInfo.processInfo.processIdentifier {
             lastExternalAppPID = front.processIdentifier
