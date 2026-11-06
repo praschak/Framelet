@@ -12,6 +12,9 @@ Framelet is a fork of [Azayaka](https://github.com/Mnpn/Azayaka) by [Martin Pers
 - Optionally merge the audio tracks after recording. The video is copied without re-encoding; the original is replaced only after the mixed file passes basic checks. FFmpeg is required for this option.
 - Write movie fragments periodically to improve the chances of recovering a recording after an app crash.
 - Check the output volume before and during a recording and stop when less than 1 GB is free. Merging is skipped if there isn't room for a temporary copy and the 1 GB reserve.
+- Include the captured window title (`%n`) and start time (`%t`) in the output filename.
+- Optionally extract on-screen text into a timestamped Markdown file at 30-second, 1-, 2-, or 5-minute intervals.
+- Optionally transcribe the finished recording using the MacWhisper CLI with automatic language detection.
 - Optionally start at login and stay in the menu bar.
 
 ## Requirements
@@ -19,17 +22,32 @@ Framelet is a fork of [Azayaka](https://github.com/Mnpn/Azayaka) by [Martin Pers
 - macOS 15 or later.
 - Screen & System Audio Recording permission, and Microphone permission if recording a microphone.
 - FFmpeg installed separately for optional audio merging. Framelet looks on `PATH`, `/opt/homebrew/bin`, `/usr/local/bin`, and `/opt/local/bin`.
+- MacWhisper with its `mw` command-line tool installed for optional transcription. Markdown export requires MacWhisper Pro and a model supporting automatic language detection. MacWhisper uses its selected transcription provider; cloud providers may send audio to that service.
 
 ## Build with Command Line Tools
 
-Install Apple's Command Line Tools or Xcode. The build produces a Universal 2 app for both Apple silicon and Intel Macs. When available, the script uses the macOS 26.5 Command Line Tools SDK because newer standalone SDKs can lack SwiftUI compiler plugins; otherwise it uses the active macOS SDK. Set `FRAMELET_SDK_PATH` to override the SDK. An internet connection is needed on the first build to fetch the pinned keyboard shortcut dependency.
+Install Apple's Command Line Tools and a compatible Swift toolchain. An internet connection is needed on the first build to fetch the pinned keyboard shortcut dependency. The build script uses the macOS 26.5 Command Line Tools SDK if available, or the active SDK otherwise; set `FRAMELET_SDK_PATH` to override it.
+
+Build for the current Mac's architecture:
 
 ```bash
 ./build-command-line.sh
 open build/Framelet.app
 ```
 
+To build for both Apple silicon and Intel, use a toolchain that includes libraries for both architectures:
+
+```bash
+FRAMELET_UNIVERSAL=1 ./build-command-line.sh
+file build/Framelet.app/Contents/MacOS/Framelet
+codesign --verify --deep --strict --verbose=2 build/Framelet.app
+```
+
+The script requires a fresh output path: move an existing `build/Framelet.app` aside before rebuilding. Builds are ad-hoc signed and not notarized; permissions may need to be granted again after a rebuild. Test recording, permissions, shortcuts, and both architectures before distributing.
+
 To enable launch at login, first move the built app to a stable location such as Applications, then enable the setting in Framelet. macOS may require approval in System Settings.
+
+OCR and transcription are optional postprocessing steps. They write ` - ocr.md` and ` - transcript.md` files beside the video. Enable audio merging when you need both microphone and system audio in the track sent for transcription. Existing Markdown files are not overwritten.
 
 ## Recording and recovery
 
